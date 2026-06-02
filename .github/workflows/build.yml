@@ -4,7 +4,9 @@ on:
   push:
     branches: [main]
   workflow_dispatch:
-
+  schedule:
+    - cron: '0 4 * * 0'   # Jeden Sonntag 04:00 Uhr UTC
+    
 jobs:
   build-and-push:
     runs-on: ubuntu-latest
