@@ -142,6 +142,64 @@ def test_kanban_tools_visible_with_toolset_config(monkeypatch, tmp_path):
     assert kanban == expected, f"expected {expected}, got {kanban}"
 
 
+def test_kanban_tools_visible_with_platform_toolset_config(monkeypatch, tmp_path):
+    """Gateway sessions should honor platform_toolsets.<platform>: [kanban]."""
+    monkeypatch.delenv("HERMES_KANBAN_TASK", raising=False)
+    monkeypatch.setenv("HERMES_PLATFORM", "telegram")
+    home = tmp_path / ".hermes"
+    home.mkdir()
+    (home / "config.yaml").write_text(
+        "platform_toolsets:\n"
+        "  telegram:\n"
+        "    - kanban\n"
+    )
+    monkeypatch.setenv("HERMES_HOME", str(home))
+
+    import tools.kanban_tools  # ensure registered
+    from tools.registry import invalidate_check_fn_cache, registry
+    from toolsets import resolve_toolset
+
+    invalidate_check_fn_cache()
+    schema = registry.get_definitions(set(resolve_toolset("hermes-cli")), quiet=True)
+    names = {s["function"].get("name") for s in schema if "function" in s}
+    kanban = {n for n in names if n and n.startswith("kanban_")}
+    expected = {
+        "kanban_list",
+        "kanban_show", "kanban_complete", "kanban_block", "kanban_heartbeat",
+        "kanban_comment", "kanban_create", "kanban_link",
+        "kanban_unblock",
+    }
+    assert kanban == expected, f"expected {expected}, got {kanban}"
+
+
+def test_kanban_tools_ignore_other_platform_toolset_config(monkeypatch, tmp_path):
+    """A platform-local kanban enablement must not leak across platforms."""
+    monkeypatch.delenv("HERMES_KANBAN_TASK", raising=False)
+    monkeypatch.setenv("HERMES_PLATFORM", "telegram")
+    home = tmp_path / ".hermes"
+    home.mkdir()
+    (home / "config.yaml").write_text(
+        "platform_toolsets:\n"
+        "  telegram:\n"
+        "    - memory\n"
+        "  discord:\n"
+        "    - kanban\n"
+    )
+    monkeypatch.setenv("HERMES_HOME", str(home))
+
+    import tools.kanban_tools  # ensure registered
+    from tools.registry import invalidate_check_fn_cache, registry
+    from toolsets import resolve_toolset
+
+    invalidate_check_fn_cache()
+    schema = registry.get_definitions(set(resolve_toolset("hermes-cli")), quiet=True)
+    names = {s["function"].get("name") for s in schema if "function" in s}
+    kanban = {n for n in names if n and n.startswith("kanban_")}
+    assert kanban == set(), (
+        f"kanban tools leaked from another platform's toolset config: {kanban}"
+    )
+
+
 # ---------------------------------------------------------------------------
 # Handler happy paths
 # ---------------------------------------------------------------------------

@@ -51,10 +51,26 @@ def _profile_has_kanban_toolset() -> bool:
     # negligible overhead. The check_fn results are further TTL-cached
     # (~30s) by the tool registry.
     try:
+        from gateway.session_context import get_session_env
         from hermes_cli.config import load_config
+
         cfg = load_config()
+
+        # Honor both global ``toolsets: [kanban]`` (legacy / CLI-orchestrator
+        # path) and the explicit per-platform toolset config used by the
+        # gateway (``platform_toolsets.<platform>: [kanban]``).
         toolsets = cfg.get("toolsets", [])
-        return "kanban" in toolsets
+        if "kanban" in toolsets:
+            return True
+
+        platform = (
+            os.getenv("HERMES_PLATFORM")
+            or get_session_env("HERMES_SESSION_PLATFORM")
+            or ""
+        ).strip()
+        platform_toolsets = cfg.get("platform_toolsets") or {}
+        configured = platform_toolsets.get(platform)
+        return isinstance(configured, list) and "kanban" in configured
     except Exception:
         return False
 
