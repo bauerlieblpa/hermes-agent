@@ -11,8 +11,12 @@ export { ProjectBackRow, ProjectOverviewRow } from './overview-row'
 export { ProjectMenu } from './project-menu'
 export { SidebarWorkspaceGroup } from './workspace-group'
 export {
+  excludeProjectSessions,
+  liveSessionProjectId,
   overlayLiveLanes,
   overlayLivePreviews,
+  reconcileEnteredProjectSessions,
+  sessionMatchesProjectFilter,
   sessionRecency,
   type SidebarProjectTree,
   type SidebarSessionGroup,

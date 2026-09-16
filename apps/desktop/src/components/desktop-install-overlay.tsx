@@ -161,6 +161,21 @@ function errorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err || 'Unknown error')
 }
 
+/** Split "lead sentence\nDetails: raw" into [lead, raw]; no marker → [text, null]. */
+export function splitFailureDetails(text: string | null): [string, string | null] {
+  const value = (text ?? '').trim()
+  const marker = value.search(/\n?\s*Details:\s*/)
+
+  if (marker < 0) {
+    return [value, null]
+  }
+
+  const lead = value.slice(0, marker).trim()
+  const detail = value.slice(marker).replace(/^\s*Details:\s*/, '').trim()
+
+  return [lead || value, detail || null]
+}
+
 const EMPTY_STATE: DesktopBootstrapState = {
   active: false,
   manifest: null,
@@ -398,7 +413,7 @@ export function DesktopInstallOverlay({ enabled = true }: DesktopInstallOverlayP
 
   if (state.setupChoice) {
     return (
-      <div className="fixed inset-0 z-[1400] flex items-center justify-center bg-background/90 p-4 backdrop-blur-md">
+      <div className="fixed inset-0 z-(--z-setup) flex items-center justify-center bg-background/90 p-4 backdrop-blur-md">
         <div className="w-full max-w-2xl rounded-xl border border-(--stroke-nous) bg-card p-8 shadow-nous">
           <div className="flex items-start gap-4">
             <BrandMark className="size-11 shrink-0" />
@@ -478,7 +493,7 @@ export function DesktopInstallOverlay({ enabled = true }: DesktopInstallOverlayP
     const platformLabel = ups.platform === 'darwin' ? 'macOS' : ups.platform === 'linux' ? 'Linux' : ups.platform
 
     return (
-      <div className="fixed inset-0 z-[1400] flex items-center justify-center bg-background/90 backdrop-blur-md">
+      <div className="fixed inset-0 z-(--z-setup) flex items-center justify-center bg-background/90 backdrop-blur-md">
         <div className="w-full max-w-xl rounded-xl border border-(--stroke-nous) bg-card p-8 shadow-nous">
           <h2 className="text-xl font-semibold tracking-tight">{copy.oneTimeTitle}</h2>
           <p className="mt-2 text-sm text-muted-foreground">{copy.unsupportedDesc(platformLabel)}</p>
@@ -538,6 +553,9 @@ export function DesktopInstallOverlay({ enabled = true }: DesktopInstallOverlayP
 
   const totalCount = stages.length
   const failed = Boolean(state.error)
+  // Main writes a plain lead sentence and keeps the raw installer error after
+  // "Details:" (electron/bootstrap-failure-copy.ts); show them as two lines.
+  const [failureLead, failureDetail] = splitFailureDetails(state.error)
   // Count the running stage as half-done so the bar advances *during* a long
   // stage instead of sitting frozen at the last completed step while its logs
   // stream (e.g. "0 of 2" pinned at 0% for the whole first stage).
@@ -547,7 +565,7 @@ export function DesktopInstallOverlay({ enabled = true }: DesktopInstallOverlayP
   const currentElapsed = typeof currentStartedAt === 'number' ? formatElapsed(now - currentStartedAt) : ''
 
   return (
-    <div className="fixed inset-0 z-[1400] flex items-center justify-center bg-background/90 backdrop-blur-md p-4">
+    <div className="fixed inset-0 z-(--z-setup) flex items-center justify-center bg-background/90 backdrop-blur-md p-4">
       <div className="flex w-full max-w-2xl max-h-[90vh] flex-col rounded-xl border border-(--stroke-nous) bg-card shadow-nous">
         {/* Header -- always visible, never scrolls */}
         <div className="flex flex-shrink-0 items-start gap-4 p-8 pb-4">
@@ -593,7 +611,12 @@ export function DesktopInstallOverlay({ enabled = true }: DesktopInstallOverlayP
               <ErrorIcon className="mt-0.5 shrink-0" size="1rem" />
               <div className="min-w-0">
                 <div className="font-medium text-destructive">{copy.error}</div>
-                <p className="mt-0.5 whitespace-pre-wrap break-words text-foreground/90">{state.error}</p>
+                <p className="mt-0.5 whitespace-pre-wrap break-words text-foreground/90">{failureLead}</p>
+                {failureDetail ? (
+                  <p className="mt-1 whitespace-pre-wrap break-words font-mono text-xs text-muted-foreground">
+                    {failureDetail}
+                  </p>
+                ) : null}
               </div>
             </div>
           )}
@@ -673,6 +696,13 @@ export function DesktopInstallOverlay({ enabled = true }: DesktopInstallOverlayP
                 <code className="font-mono text-(--ui-text-secondary)">%LOCALAPPDATA%\hermes\logs\</code>
               </span>
               <div className="flex gap-2">
+                <Button
+                  onClick={() => void window.hermesDesktop?.revealLogs?.().catch(() => undefined)}
+                  size="sm"
+                  variant="ghost"
+                >
+                  {copy.openLogs}
+                </Button>
                 <Button
                   onClick={async () => {
                     const text = state.log
