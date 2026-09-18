@@ -99,6 +99,10 @@ jobs:
           fetch-tags: true
           sparse-checkout: scripts/sandbox/pick-release-tags.sh
           sparse-checkout-cone-mode: false
+      # Fork syncing advances main but does not copy release tags. E2E tests
+      # upgrades from official releases, so fetch the canonical tag namespace.
+      - name: Fetch official release tags
+        run: git fetch --force https://github.com/NousResearch/hermes-agent.git 'refs/tags/v*:refs/tags/v*'
       - id: pick
         env:
           # Dispatch inputs never touch shell syntax directly: TAG_COUNT

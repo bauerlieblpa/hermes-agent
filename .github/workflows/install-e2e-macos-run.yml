@@ -93,6 +93,11 @@ jobs:
         with:
           fetch-depth: 0
 
+      # The parent workflow picks official upstream release tags; a fork may
+      # have no matching tags after a main-only fork sync.
+      - name: Fetch official release tags
+        run: git fetch --force https://github.com/NousResearch/hermes-agent.git 'refs/tags/v*:refs/tags/v*'
+
       - name: Start screen recording
         uses: ./.github/actions/e2e-screen-record
         with:

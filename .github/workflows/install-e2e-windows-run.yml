@@ -118,6 +118,12 @@ jobs:
         with:
           fetch-depth: 0
 
+      # The parent workflow picks official upstream release tags; a fork may
+      # have no matching tags after a main-only fork sync.
+      - name: Fetch official release tags
+        shell: bash
+        run: git fetch --force https://github.com/NousResearch/hermes-agent.git 'refs/tags/v*:refs/tags/v*'
+
       # One recording mechanism on every OS: the composite action installs
       # ffmpeg (cached - winget's download is the slow part), starts the
       # capture, and record-stop fails on a zero-frame file so a silently
