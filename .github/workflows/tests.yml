@@ -17,7 +17,9 @@ jobs:
     # Run the unsliced suite on GitHub's standard hosted Linux runner. This is
     # available to normal forks, unlike the repository's large-runner lane.
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    # The CPU-based default worker count on the standard runner needs more
+    # than the former large-runner 30-minute allowance for the full suite.
+    timeout-minutes: 45
     steps:
       - name: Checkout code
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
