@@ -116,13 +116,21 @@ async function main() {
   const spec = JSON.parse(fs.readFileSync(values.spec, 'utf8'));
   const launch = resolveLaunch(spec);
   log(`launching ${launch.executablePath} (shape: ${spec.matchedShape})`);
+  const launchEnv = {
+    ...launch.env,
+    // `hermes desktop` sanitizes its child environment, so inject the
+    // two-factor packaged-CDP test opt-in at the driver boundary that actually
+    // starts Electron. This remains confined to the E2E-owned process.
+    HERMES_E2E_CAPTURE_LAUNCH: values.spec,
+    HERMES_DESKTOP_E2E_CDP_PORT: '9223'
+  };
 
   phase('launch');
   const app = await _electron.launch({
     executablePath: launch.executablePath,
     args: launch.args,
     cwd: launch.cwd,
-    env: launch.env,
+    env: launchEnv,
   });
   // The app spawns several BrowserWindows (wake indicator, helper surfaces)
   // and firstWindow() grabs whichever webContents came first, which is not
@@ -412,7 +420,7 @@ async function main() {
     executablePath: launch.executablePath,
     args: launch.args,
     cwd: launch.cwd,
-    env: launch.env,
+    env: launchEnv,
   });
   let window2 = null;
   const relaunchDeadline = Date.now() + 120_000;

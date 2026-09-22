@@ -380,7 +380,6 @@ case "$UPDATE_METHOD" in
     (cd "$INSTALL_DIR" && \
       PYTHONPATH="$ASSETS/launch-capture${PYTHONPATH:+:$PYTHONPATH}" \
       HERMES_E2E_CAPTURE_LAUNCH="$SPEC" \
-      HERMES_DESKTOP_E2E_CDP_PORT=9223 \
       "$HERMES" desktop < /dev/null 2>&1 | ts_prefix > "$LOG_DIR/desktop-launch-capture.log") || rc=$?
     log_group "hermes desktop (launch capture) transcript" "$LOG_DIR/desktop-launch-capture.log"
     [ "$rc" -eq 0 ] || fail "hermes desktop exited $rc during launch capture; transcript above"
