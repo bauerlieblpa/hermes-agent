@@ -28,11 +28,14 @@
  */
 
 import fs from 'node:fs';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { parseArgs } from 'node:util';
 import { _electron } from '@playwright/test';
 import { prepareWindowForInput } from './window-input.cjs';
+
+const require = createRequire(import.meta.url);
 
 /**
  * @typedef {{argv: string[], cwd: string, env: Record<string, string>,
@@ -77,6 +80,51 @@ export function resolveLaunch(spec) {
   throw new Error(`no electron binary found under ${candidates.join(' or ')}`);
 }
 
+/** @param {string} source */
+export function patchedPlaywrightElectronSource(source) {
+  const stock = 'let electronArguments = ["--inspect=0", "--remote-debugging-port=0", ...options.args || []];';
+  const patched = 'let electronArguments = ["--inspect=0", ...options.args || []];';
+  if ((source.split(stock).length - 1) !== 1) {
+    throw new Error('unsupported Playwright Electron driver: expected remote-debugging argv setup once');
+  }
+  return source.replace(stock, patched);
+}
+
+/** @param {string} source */
+export function patchedPlaywrightElectronLoaderSource(source) {
+  const stock = 'process.argv.splice(1, process.argv.indexOf("--remote-debugging-port=0"));';
+  const patched = 'process.argv.splice(1, process.argv.indexOf("--inspect=0"));\napp.commandLine.appendSwitch("remote-debugging-port", "0");';
+  if ((source.split(stock).length - 1) !== 1) {
+    throw new Error('unsupported Playwright Electron loader: expected remote-debugging argv splice once');
+  }
+  return source.replace(stock, patched);
+}
+
+/** @param {string} value */
+function shellQuote(value) {
+  return `'${value.replaceAll("'", "'\"'\"'")}'`;
+}
+
+/** @param {string} electronPath @param {string} loaderPath */
+export function posixElectronWrapperContents(electronPath, loaderPath) {
+  return `#!/bin/sh\nexec ${shellQuote(electronPath)} -r ${shellQuote(loaderPath)} "$@"\n`;
+}
+
+/** @param {string} launchPath @param {string} directory */
+function prepareElectron40Driver(launchPath, directory) {
+  const coreRoot = path.dirname(require.resolve('playwright-core/package.json'));
+  const driverPath = path.join(coreRoot, 'lib', 'server', 'electron', 'electron.js');
+  const stockLoaderPath = path.join(coreRoot, 'lib', 'server', 'electron', 'loader.js');
+  const loaderPath = path.join(directory, '.playwright-electron40-loader.cjs');
+  const wrapperPath = path.join(directory, '.playwright-packaged-electron.sh');
+
+  fs.writeFileSync(driverPath, patchedPlaywrightElectronSource(fs.readFileSync(driverPath, 'utf8')));
+  fs.writeFileSync(loaderPath, patchedPlaywrightElectronLoaderSource(fs.readFileSync(stockLoaderPath, 'utf8')), { mode: 0o600 });
+  fs.writeFileSync(wrapperPath, posixElectronWrapperContents(launchPath, loaderPath), { mode: 0o700 });
+  fs.chmodSync(wrapperPath, 0o700);
+  return wrapperPath;
+}
+
 /** @param {string} msg */
 function log(msg) {
   console.log(`[launch-from-spec] ${msg}`);
@@ -115,11 +163,12 @@ async function main() {
   /** @type {LaunchSpec} */
   const spec = JSON.parse(fs.readFileSync(values.spec, 'utf8'));
   const launch = resolveLaunch(spec);
-  log(`launching ${launch.executablePath} (shape: ${spec.matchedShape})`);
+  const wrapperPath = prepareElectron40Driver(launch.executablePath, path.dirname(values.spec));
+  log(`launching ${launch.executablePath} through the Electron 40-compatible Playwright driver (shape: ${spec.matchedShape})`);
 
   phase('launch');
   const app = await _electron.launch({
-    executablePath: launch.executablePath,
+    executablePath: wrapperPath,
     args: launch.args,
     cwd: launch.cwd,
     env: launch.env,
