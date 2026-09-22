@@ -77,6 +77,22 @@ export function resolveLaunch(spec) {
   throw new Error(`no electron binary found under ${candidates.join(' or ')}`);
 }
 
+/**
+ * The captured command is the product launch surface. Linux CI is the one
+ * deliberate exception: its Xvfb-only display has neither a usable GPU nor a
+ * user-namespace sandbox. The established packaged-app driver uses these two
+ * flags for that host; keep them driver-side so real `hermes desktop` launches
+ * remain unchanged.
+ *
+ * @param {string[]} args
+ * @param {string} platform
+ */
+export function linuxCiLaunchArgs(args, platform = process.platform) {
+  if (platform !== 'linux') return args;
+  const required = ['--disable-gpu', '--no-sandbox'];
+  return [...args, ...required.filter((flag) => !args.includes(flag))];
+}
+
 /** @param {string} msg */
 function log(msg) {
   console.log(`[launch-from-spec] ${msg}`);
@@ -116,11 +132,12 @@ async function main() {
   const spec = JSON.parse(fs.readFileSync(values.spec, 'utf8'));
   const launch = resolveLaunch(spec);
   log(`launching ${launch.executablePath} (shape: ${spec.matchedShape})`);
+  const launchArgs = linuxCiLaunchArgs(launch.args);
 
   phase('launch');
   const app = await _electron.launch({
     executablePath: launch.executablePath,
-    args: launch.args,
+    args: launchArgs,
     cwd: launch.cwd,
     env: launch.env,
   });
@@ -410,7 +427,7 @@ async function main() {
   log('relaunching the updated app (the "reopen Hermes" step)');
   const relaunch = await _electron.launch({
     executablePath: launch.executablePath,
-    args: launch.args,
+    args: launchArgs,
     cwd: launch.cwd,
     env: launch.env,
   });
