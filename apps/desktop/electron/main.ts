@@ -523,6 +523,12 @@ const IS_PACKAGED = app.isPackaged || Boolean(process.env.HERMES_DESKTOP_IS_PACK
 const IS_MAC = process.platform === 'darwin'
 const IS_WINDOWS = process.platform === 'win32'
 const IS_WSL = isWslEnvironment()
+const E2E_LAUNCH_TRACE = process.env.HERMES_E2E_LAUNCH_TRACE === '1'
+const traceE2eLaunch = (message: string) => {
+  if (E2E_LAUNCH_TRACE) {
+    console.log(`[hermes:e2e-launch] ${message}`)
+  }
+}
 // Truthful macOS kernel major (Tahoe = 25). Product version lies (16 vs 26) per
 // build SDK, so gate Tahoe workarounds on Darwin instead.
 const DARWIN_MAJOR = IS_MAC ? Number.parseInt(os.release(), 10) || 0 : 0
@@ -809,6 +815,8 @@ if (INSTALL_STAMP) {
     '[hermes] WARNING: no install-stamp.json found in packaged build. First-launch bootstrap will not have a pinned ref to install.'
   )
 }
+
+traceE2eLaunch(`main: evaluated (ready=${app.isReady()}, packaged=${IS_PACKAGED})`)
 
 // HERMES_HOME — the user-facing root for everything Hermes-related. Mirrors
 // scripts/install.ps1's $HermesHome and scripts/install.sh's $HERMES_HOME.
@@ -14638,6 +14646,7 @@ function closeQuickEntryWindow() {
 }
 
 function createWindow() {
+  traceE2eLaunch('main: createWindow entered')
   const icon = getAppIconPath()
   const savedWindowState = readWindowState()
   mainWindow = new BrowserWindow({
@@ -14667,6 +14676,7 @@ function createWindow() {
     // session-windows.ts and stream-throttle.ts.
     webPreferences: chatWindowWebPreferences(PRELOAD_PATH)
   })
+  traceE2eLaunch('main: BrowserWindow constructed')
 
   const createdMainWindow = mainWindow
   const defaultRoute = desktopProfilePreferences.getDefault()
@@ -18109,6 +18119,7 @@ function registerDeepLinkProtocol() {
 // whole new app instead of routing into the running one.
 const _gotSingleInstanceLock = app.requestSingleInstanceLock()
 const isPrimaryInstance = _gotSingleInstanceLock
+traceE2eLaunch(`main: single-instance lock=${isPrimaryInstance}`)
 
 if (!isPrimaryInstance) {
   // Hard-exit, not app.quit(): the before-quit teardown coordinator defers a
@@ -18145,6 +18156,7 @@ app.on('open-url', (event, url) => {
 })
 
 app.whenReady().then(() => {
+  traceE2eLaunch('main: app.whenReady resolved')
   // Warm the login-shell PATH resolution immediately so it usually completes
   // before the backend start path awaits the same single-flight promise.
   void ensureLoginShellPath()
@@ -18221,7 +18233,9 @@ app.whenReady().then(() => {
   // its worker waits for the install marker to clear, then reopens every scope
   // captured by the original transaction before removing the journal entry.
   void resumeManagedSshRecoveries()
+  traceE2eLaunch('main: creating primary BrowserWindow')
   createWindow()
+  traceE2eLaunch('main: createWindow returned')
 
   // Win/Linux cold start: the launching hermes:// URL is in our own argv.
   const _coldStartLink = _extractDeepLink(process.argv)

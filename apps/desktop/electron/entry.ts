@@ -4,6 +4,11 @@ import { wslgLaunchArgs } from './wslg-launch'
 import { spawnWslgLaunch } from './wslg-launch-process'
 
 const args = wslgLaunchArgs(process.argv.slice(1), process.env, process.platform)
+const e2eLaunchTrace = process.env.HERMES_E2E_LAUNCH_TRACE === '1'
+
+if (e2eLaunchTrace) {
+  console.log(`[hermes:e2e-launch] entry: ${args ? 'WSLg handoff' : 'importing main'}`)
+}
 
 if (args) {
   // Keep the launcher alive until the child exits: npm's concurrently must not
@@ -23,4 +28,8 @@ if (args) {
   }
 } else {
   await import('./main')
+
+  if (e2eLaunchTrace) {
+    console.log('[hermes:e2e-launch] entry: main module evaluated')
+  }
 }
