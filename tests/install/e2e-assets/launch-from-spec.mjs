@@ -28,11 +28,14 @@
  */
 
 import fs from 'node:fs';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { parseArgs } from 'node:util';
 import { _electron } from '@playwright/test';
 import { prepareWindowForInput } from './window-input.cjs';
+
+const require = createRequire(import.meta.url);
 
 /**
  * @typedef {{argv: string[], cwd: string, env: Record<string, string>,
@@ -77,6 +80,23 @@ export function resolveLaunch(spec) {
   throw new Error(`no electron binary found under ${candidates.join(' or ')}`);
 }
 
+/**
+ * Playwright injects this module automatically only when it launches its own
+ * Electron package binary. This driver launches Hermes's packaged executable,
+ * so resolve and inject the same loader ourselves: it opens Chromium CDP and
+ * coordinates `app.whenReady()` with the Playwright inspector session.
+ */
+export function playwrightElectronLoaderPath() {
+  const corePackage = require.resolve('playwright-core/package.json');
+  const loader = path.join(path.dirname(corePackage), 'lib', 'server', 'electron', 'loader.js');
+
+  if (!fs.existsSync(loader)) {
+    throw new Error(`Playwright Electron loader not found at ${loader}`);
+  }
+
+  return loader;
+}
+
 /** @param {string} msg */
 function log(msg) {
   console.log(`[launch-from-spec] ${msg}`);
@@ -115,12 +135,14 @@ async function main() {
   /** @type {LaunchSpec} */
   const spec = JSON.parse(fs.readFileSync(values.spec, 'utf8'));
   const launch = resolveLaunch(spec);
-  log(`launching ${launch.executablePath} (shape: ${spec.matchedShape})`);
+  const playwrightLoader = playwrightElectronLoaderPath();
+  const launchArgs = ['-r', playwrightLoader, ...launch.args];
+  log(`launching ${launch.executablePath} (shape: ${spec.matchedShape}, loader: ${playwrightLoader})`);
 
   phase('launch');
   const app = await _electron.launch({
     executablePath: launch.executablePath,
-    args: launch.args,
+    args: launchArgs,
     cwd: launch.cwd,
     env: launch.env,
   });
@@ -410,7 +432,7 @@ async function main() {
   log('relaunching the updated app (the "reopen Hermes" step)');
   const relaunch = await _electron.launch({
     executablePath: launch.executablePath,
-    args: launch.args,
+    args: launchArgs,
     cwd: launch.cwd,
     env: launch.env,
   });
