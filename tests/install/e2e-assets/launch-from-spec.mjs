@@ -28,11 +28,14 @@
  */
 
 import fs from 'node:fs';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { parseArgs } from 'node:util';
 import { _electron } from '@playwright/test';
 import { prepareWindowForInput } from './window-input.cjs';
+
+const require = createRequire(import.meta.url);
 
 /**
  * @typedef {{argv: string[], cwd: string, env: Record<string, string>,
@@ -77,6 +80,39 @@ export function resolveLaunch(spec) {
   throw new Error(`no electron binary found under ${candidates.join(' or ')}`);
 }
 
+/** Return the internal loader used by Playwright's ordinary Electron launch. */
+export function playwrightElectronLoaderPath() {
+  const corePackage = require.resolve('playwright-core/package.json');
+  const loader = path.join(path.dirname(corePackage), 'lib', 'server', 'electron', 'loader.js');
+  if (!fs.existsSync(loader)) throw new Error(`Playwright Electron loader not found at ${loader}`);
+  return loader;
+}
+
+/** @param {string} value */
+function shellQuote(value) {
+  return `'${value.replaceAll("'", "'\"'\"'")}'`;
+}
+
+/**
+ * A custom executablePath disables Playwright's normal loader insertion.
+ * This wrapper restores its required argument order: preload first, then the
+ * inspector/Chromium flags that Playwright supplies to the executable.
+ *
+ * @param {string} electronPath
+ * @param {string} loaderPath
+ */
+export function posixElectronWrapperContents(electronPath, loaderPath) {
+  return `#!/bin/sh\nexec ${shellQuote(electronPath)} -r ${shellQuote(loaderPath)} "$@"\n`;
+}
+
+/** @param {string} electronPath @param {string} loaderPath @param {string} directory */
+function writePosixElectronWrapper(electronPath, loaderPath, directory) {
+  const wrapper = path.join(directory, '.playwright-packaged-electron.sh');
+  fs.writeFileSync(wrapper, posixElectronWrapperContents(electronPath, loaderPath), { mode: 0o700 });
+  fs.chmodSync(wrapper, 0o700);
+  return wrapper;
+}
+
 /** @param {string} msg */
 function log(msg) {
   console.log(`[launch-from-spec] ${msg}`);
@@ -115,11 +151,18 @@ async function main() {
   /** @type {LaunchSpec} */
   const spec = JSON.parse(fs.readFileSync(values.spec, 'utf8'));
   const launch = resolveLaunch(spec);
-  log(`launching ${launch.executablePath} (shape: ${spec.matchedShape})`);
+  if (process.platform === 'win32') {
+    throw new Error('packaged Electron Playwright wrapper is only implemented for POSIX runners');
+  }
+  const playwrightLoader = playwrightElectronLoaderPath();
+  const playwrightExecutable = writePosixElectronWrapper(
+    launch.executablePath, playwrightLoader, path.dirname(values.spec),
+  );
+  log(`launching ${launch.executablePath} via ${playwrightExecutable} (shape: ${spec.matchedShape})`);
 
   phase('launch');
   const app = await _electron.launch({
-    executablePath: launch.executablePath,
+    executablePath: playwrightExecutable,
     args: launch.args,
     cwd: launch.cwd,
     env: launch.env,
@@ -409,7 +452,7 @@ async function main() {
   phase('relaunch');
   log('relaunching the updated app (the "reopen Hermes" step)');
   const relaunch = await _electron.launch({
-    executablePath: launch.executablePath,
+    executablePath: playwrightExecutable,
     args: launch.args,
     cwd: launch.cwd,
     env: launch.env,
