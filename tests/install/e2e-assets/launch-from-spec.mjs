@@ -88,6 +88,37 @@ export function playwrightElectronLoaderPath() {
   return loader;
 }
 
+/**
+ * The stock Playwright loader removes `--remote-debugging-port=0` from argv.
+ * That works for its own Electron binary, but a packaged Hermes app deliberately
+ * does not add a debug port itself. Keep the port while still removing Node's
+ * preload and inspector arguments before Hermes reads its app argv.
+ *
+ * @param {string} stockLoader
+ */
+export function patchPackagedElectronLoader(stockLoader) {
+  const stock = 'process.argv.splice(1, process.argv.indexOf("--remote-debugging-port=0"));';
+  const replacement = [
+    'const remoteDebugIndex = process.argv.indexOf("--remote-debugging-port=0");',
+    'if (remoteDebugIndex > 1) {',
+    '  process.argv.splice(1, remoteDebugIndex - 1);',
+    '}',
+  ].join('\n');
+  const occurrences = stockLoader.split(stock).length - 1;
+  if (occurrences !== 1) {
+    throw new Error(`expected exactly one Playwright loader argv splice, found ${occurrences}`);
+  }
+  return stockLoader.replace(stock, replacement);
+}
+
+/** @param {string} stockLoaderPath @param {string} directory */
+function writePackagedElectronLoader(stockLoaderPath, directory) {
+  const loader = path.join(directory, '.playwright-packaged-electron-loader.cjs');
+  const stockLoader = fs.readFileSync(stockLoaderPath, 'utf8');
+  fs.writeFileSync(loader, patchPackagedElectronLoader(stockLoader), { mode: 0o600 });
+  return loader;
+}
+
 /** @param {string} value */
 function shellQuote(value) {
   return `'${value.replaceAll("'", "'\"'\"'")}'`;
@@ -155,8 +186,9 @@ async function main() {
     throw new Error('packaged Electron Playwright wrapper is only implemented for POSIX runners');
   }
   const playwrightLoader = playwrightElectronLoaderPath();
+  const packagedLoader = writePackagedElectronLoader(playwrightLoader, path.dirname(values.spec));
   const playwrightExecutable = writePosixElectronWrapper(
-    launch.executablePath, playwrightLoader, path.dirname(values.spec),
+    launch.executablePath, packagedLoader, path.dirname(values.spec),
   );
   log(`launching ${launch.executablePath} via ${playwrightExecutable} (shape: ${spec.matchedShape})`);
 
