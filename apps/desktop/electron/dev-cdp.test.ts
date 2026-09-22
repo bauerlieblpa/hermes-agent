@@ -45,6 +45,39 @@ test('packaged is checked before every other gate', () => {
   }
 })
 
+test('the installer E2E can opt a packaged build into a fixed CDP port', () => {
+  const decision = resolveDevCdpPort({
+    ...devRun,
+    env: {
+      HERMES_E2E_CAPTURE_LAUNCH: '/tmp/launch-spec.json',
+      HERMES_DESKTOP_E2E_CDP_PORT: '9223'
+    },
+    isPackaged: true
+  })
+
+  assert.deepEqual(decision, { port: 9223, reason: null })
+})
+
+test('a packaged E2E port needs the capture marker and must be valid', () => {
+  const withoutMarker = resolveDevCdpPort({
+    ...devRun,
+    env: { HERMES_DESKTOP_E2E_CDP_PORT: '9223' },
+    isPackaged: true
+  })
+
+  const invalid = resolveDevCdpPort({
+    ...devRun,
+    env: {
+      HERMES_E2E_CAPTURE_LAUNCH: '/tmp/launch-spec.json',
+      HERMES_DESKTOP_E2E_CDP_PORT: '70000'
+    },
+    isPackaged: true
+  })
+
+  assert.deepEqual(withoutMarker, { port: null, reason: 'packaged' })
+  assert.deepEqual(invalid, { port: null, reason: 'invalid-port' })
+})
+
 test('an unpackaged dist run (no dev server) does not qualify', () => {
   // `electron .` against dist/ is how the packaged app gets smoke tested; it
   // should behave like the packaged app, not like a source-tree dev run.

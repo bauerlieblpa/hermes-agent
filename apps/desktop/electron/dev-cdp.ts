@@ -13,7 +13,8 @@
  * already opens one unconditionally. What must never happen is a *packaged*
  * app exposing it, which is the one hard gate here.
  *
- *  - packaged build              → always closed, whatever the env says.
+ *  - packaged build              → closed, except for the installer E2E's
+ *                                  explicit capture + fixed-port opt-in.
  *  - no HERMES_DESKTOP_DEV_SERVER → closed (an unpackaged `electron .` against
  *    dist/ is how the packaged app gets smoke tested; it should behave like
  *    the packaged app).
@@ -47,12 +48,30 @@ const MAX_PORT = 65535
 
 const OPT_OUT = new Set(['0', 'off', 'false', 'no'])
 
+function resolvePort(requested: string): number | null {
+  const port = Number(requested)
+
+  return Number.isInteger(port) && port >= MIN_PORT && port <= MAX_PORT ? port : null
+}
+
 /**
  * Decide whether this run may expose a renderer debugging port, and on which
  * port. Pure: every input is passed in, so the gate is testable without an
  * Electron app or a real environment.
  */
 function resolveDevCdpPort({ env, isPackaged, devServer }: DevCdpInput): DevCdpDecision {
+  // The installer E2E attaches Playwright to the packaged app it just built.
+  // Keep that escape hatch deliberately two-factor: the capture marker is
+  // driver-only, and the port must be explicitly supplied. A normal packaged
+  // launch remains closed even if one of the variables leaks.
+  const e2ePort = (env.HERMES_DESKTOP_E2E_CDP_PORT ?? '').trim()
+
+  if (isPackaged && env.HERMES_E2E_CAPTURE_LAUNCH && e2ePort) {
+    const port = resolvePort(e2ePort)
+
+    return port ? { port, reason: null } : { port: null, reason: 'invalid-port' }
+  }
+
   // Packaged wins over everything. Checked first so no combination of
   // environment variables can talk a shipped build into opening the port.
   if (isPackaged) {
@@ -74,9 +93,9 @@ function resolveDevCdpPort({ env, isPackaged, devServer }: DevCdpInput): DevCdpD
     return { port: null, reason: 'opted-out' }
   }
 
-  const port = Number(requested)
+  const port = resolvePort(requested)
 
-  if (!Number.isInteger(port) || port < MIN_PORT || port > MAX_PORT) {
+  if (!port) {
     return { port: null, reason: 'invalid-port' }
   }
 
