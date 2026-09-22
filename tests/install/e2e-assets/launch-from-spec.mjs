@@ -29,9 +29,9 @@
 
 import fs from 'node:fs';
 import path from 'node:path';
-import { execFileSync } from 'node:child_process';
+import { execFileSync, spawn } from 'node:child_process';
 import { parseArgs } from 'node:util';
-import { _electron } from '@playwright/test';
+import { chromium } from '@playwright/test';
 import { prepareWindowForInput } from './window-input.cjs';
 
 /**
@@ -77,6 +77,81 @@ export function resolveLaunch(spec) {
   throw new Error(`no electron binary found under ${candidates.join(' or ')}`);
 }
 
+/** @param {string[]} args */
+export function externalCdpArgs(args) {
+  return args.some((arg) => arg.startsWith('--remote-debugging-port='))
+    ? args
+    : [...args, '--remote-debugging-port=0'];
+}
+
+/** @param {import('node:child_process').ChildProcess} child @param {RegExp} pattern */
+function waitForLine(child, pattern) {
+  return new Promise((resolve, reject) => {
+    let tail = '';
+    const timeout = setTimeout(() => reject(new Error(`timed out waiting for ${pattern}: ${tail.slice(-1000)}`)), 90_000);
+    const finish = (fn) => (value) => {
+      clearTimeout(timeout);
+      child.stdout?.off('data', onData);
+      child.stderr?.off('data', onData);
+      child.off('error', onError);
+      child.off('exit', onExit);
+      fn(value);
+    };
+    const succeed = finish(resolve);
+    const fail = finish(reject);
+    const onData = (chunk) => {
+      tail = `${tail}${chunk}`.slice(-10_000);
+      const match = tail.match(pattern);
+      if (match) succeed(match[1]);
+    };
+    const onError = (error) => fail(error);
+    const onExit = (code, signal) => fail(new Error(`packaged app exited before CDP connected (code=${code}, signal=${signal}): ${tail.slice(-1000)}`));
+    child.stdout?.on('data', onData);
+    child.stderr?.on('data', onData);
+    child.once('error', onError);
+    child.once('exit', onExit);
+  });
+}
+
+class ExternalCdpApplication {
+  /** @param {import('@playwright/test').Browser} browser @param {import('node:child_process').ChildProcess} child */
+  constructor(browser, child) {
+    this.browser = browser;
+    this.child = child;
+  }
+  windows() {
+    return this.browser.contexts().flatMap((context) => context.pages());
+  }
+  async firstWindow({ timeout }) {
+    const deadline = Date.now() + timeout;
+    while (Date.now() < deadline) {
+      const page = this.windows()[0];
+      if (page) return page;
+      await new Promise((resolve) => setTimeout(resolve, 250));
+    }
+    throw new Error(`no Chromium page appeared within ${timeout}ms`);
+  }
+  process() {
+    return this.child;
+  }
+  async close() {
+    if (!this.child.killed) this.child.kill('SIGTERM');
+    await this.browser.close().catch(() => {});
+  }
+}
+
+/** @param {{executablePath: string, args: string[], cwd: string, env: Record<string, string>}} launch */
+async function launchPackagedAppOverCdp(launch) {
+  const child = spawn(launch.executablePath, externalCdpArgs(launch.args), {
+    cwd: launch.cwd,
+    env: launch.env,
+    stdio: ['ignore', 'pipe', 'pipe'],
+  });
+  const endpoint = await waitForLine(child, /^DevTools listening on (ws:\/\/.*)$/m);
+  const browser = await chromium.connectOverCDP(endpoint);
+  return new ExternalCdpApplication(browser, child);
+}
+
 /** @param {string} msg */
 function log(msg) {
   console.log(`[launch-from-spec] ${msg}`);
@@ -115,15 +190,10 @@ async function main() {
   /** @type {LaunchSpec} */
   const spec = JSON.parse(fs.readFileSync(values.spec, 'utf8'));
   const launch = resolveLaunch(spec);
-  log(`launching ${launch.executablePath} (shape: ${spec.matchedShape})`);
+  log(`launching ${launch.executablePath} via external Chromium CDP (shape: ${spec.matchedShape})`);
 
   phase('launch');
-  const app = await _electron.launch({
-    executablePath: launch.executablePath,
-    args: launch.args,
-    cwd: launch.cwd,
-    env: launch.env,
-  });
+  const app = await launchPackagedAppOverCdp(launch);
   // The app spawns several BrowserWindows (wake indicator, helper surfaces)
   // and firstWindow() grabs whichever webContents came first, which is not
   // always the main app window. Pick the window that actually renders the
@@ -408,12 +478,7 @@ async function main() {
   // form, or at minimum a live UI window, logging what we saw.
   phase('relaunch');
   log('relaunching the updated app (the "reopen Hermes" step)');
-  const relaunch = await _electron.launch({
-    executablePath: launch.executablePath,
-    args: launch.args,
-    cwd: launch.cwd,
-    env: launch.env,
-  });
+  const relaunch = await launchPackagedAppOverCdp(launch);
   let window2 = null;
   const relaunchDeadline = Date.now() + 120_000;
   while (!window2 && Date.now() < relaunchDeadline) {
