@@ -262,9 +262,12 @@ ensure_playwright() {
   local pw_dir="$WORK_ROOT/playwright"
   [ -d "$pw_dir/node_modules/@playwright/test" ] && { printf '%s' "$pw_dir"; return 0; }
   mkdir -p "$pw_dir"
+  local electron_version
+  electron_version="$(node -e 'console.log(require(process.argv[1]).devDependencies.electron)' "$REPO_ROOT/apps/desktop/package.json")"
+  [[ "$electron_version" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail "desktop Electron version must be pinned, got: $electron_version"
   (cd "$pw_dir" && npm install --no-save --no-audit --no-fund \
-    "@playwright/test@$PLAYWRIGHT_VERSION" 2>&1 | ts_prefix > "$LOG_DIR/playwright-install.log") \
-    || { log_group "playwright install transcript" "$LOG_DIR/playwright-install.log"; fail "playwright install failed"; }
+    "@playwright/test@$PLAYWRIGHT_VERSION" "electron@$electron_version" 2>&1 | ts_prefix > "$LOG_DIR/playwright-install.log") \
+    || { log_group "playwright install transcript" "$LOG_DIR/playwright-install.log"; fail "playwright/Electron driver install failed"; }
   printf '%s' "$pw_dir"
 }
 

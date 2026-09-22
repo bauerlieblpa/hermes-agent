@@ -394,9 +394,11 @@ case "$UPDATE_METHOD" in
     # (older OLD refs predate the dependency; hoisting moves it around).
     PW_DIR="$WORK_ROOT/playwright"
     mkdir -p "$PW_DIR"
+    ELECTRON_VERSION="$(node -e 'console.log(require(process.argv[1]).devDependencies.electron)' "$REPO_ROOT/apps/desktop/package.json")"
+    [[ "$ELECTRON_VERSION" =~ ^[0-9]+\.[0-9]+\.[0-9]+$ ]] || fail "desktop Electron version must be pinned, got: $ELECTRON_VERSION"
     (cd "$PW_DIR" && npm install --no-save --no-audit --no-fund \
-      "@playwright/test@1.58.2" 2>&1 | ts_prefix > "$LOG_DIR/playwright-install.log") \
-      || { log_group "playwright install transcript" "$LOG_DIR/playwright-install.log"; fail "playwright install failed"; }
+      "@playwright/test@1.58.2" "electron@$ELECTRON_VERSION" 2>&1 | ts_prefix > "$LOG_DIR/playwright-install.log") \
+      || { log_group "playwright install transcript" "$LOG_DIR/playwright-install.log"; fail "playwright/Electron driver install failed"; }
     cp "$ASSETS/launch-from-spec.mjs" "$ASSETS/window-input.cjs" "$PW_DIR/"
     rc=0
     (cd "$PW_DIR" && node launch-from-spec.mjs \

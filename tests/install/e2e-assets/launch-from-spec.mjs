@@ -28,11 +28,14 @@
  */
 
 import fs from 'node:fs';
+import { createRequire } from 'node:module';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { parseArgs } from 'node:util';
 import { _electron } from '@playwright/test';
 import { prepareWindowForInput } from './window-input.cjs';
+
+const require = createRequire(import.meta.url);
 
 /**
  * @typedef {{argv: string[], cwd: string, env: Record<string, string>,
@@ -77,6 +80,46 @@ export function resolveLaunch(spec) {
   throw new Error(`no electron binary found under ${candidates.join(' or ')}`);
 }
 
+/** @param {string} executablePath @param {NodeJS.Platform} [platform] */
+export function packagedResourcesPath(executablePath, platform = process.platform) {
+  return platform === 'darwin'
+    ? path.resolve(path.dirname(executablePath), '..', 'Resources')
+    : path.join(path.dirname(executablePath), 'resources');
+}
+
+/**
+ * Give Playwright's own Electron distribution the complete resource set from
+ * the captured packaged Hermes app. The runtime is a throwaway driver install,
+ * so symlinks keep the real package intact while letting Electron discover it
+ * through its normal `resources/app.asar` production path.
+ *
+ * @param {string} sourceResources
+ * @param {string} targetResources
+ */
+export function stagePackagedResources(sourceResources, targetResources) {
+  if (!fs.existsSync(path.join(sourceResources, 'app.asar'))) {
+    throw new Error(`packaged app.asar missing from ${sourceResources}`);
+  }
+  fs.mkdirSync(targetResources, { recursive: true });
+  for (const entry of fs.readdirSync(sourceResources)) {
+    const source = path.join(sourceResources, entry);
+    const target = path.join(targetResources, entry);
+    fs.rmSync(target, { recursive: true, force: true });
+    fs.symlinkSync(source, target, fs.statSync(source).isDirectory() ? 'dir' : 'file');
+  }
+}
+
+/** @param {{executablePath: string, args: string[], cwd: string, env: Record<string, string>}} launch */
+function stagePackagedElectronRuntime(launch) {
+  if (!launch.executablePath || !fs.existsSync(launch.executablePath)) {
+    throw new Error(`captured packaged executable is unavailable: ${launch.executablePath}`);
+  }
+  const sourceResources = packagedResourcesPath(launch.executablePath);
+  const electronExecutable = require('electron');
+  const targetResources = packagedResourcesPath(electronExecutable);
+  stagePackagedResources(sourceResources, targetResources);
+}
+
 /** @param {string} msg */
 function log(msg) {
   console.log(`[launch-from-spec] ${msg}`);
@@ -115,11 +158,13 @@ async function main() {
   /** @type {LaunchSpec} */
   const spec = JSON.parse(fs.readFileSync(values.spec, 'utf8'));
   const launch = resolveLaunch(spec);
-  log(`launching ${launch.executablePath} (shape: ${spec.matchedShape})`);
+  if (spec.matchedShape === 'packaged') {
+    stagePackagedElectronRuntime(launch);
+  }
+  log(`launching ${spec.matchedShape === 'packaged' ? 'staged packaged Hermes resources through Playwright Electron' : launch.executablePath} (shape: ${spec.matchedShape})`);
 
   phase('launch');
   const app = await _electron.launch({
-    executablePath: launch.executablePath,
     args: launch.args,
     cwd: launch.cwd,
     env: launch.env,
@@ -409,7 +454,6 @@ async function main() {
   phase('relaunch');
   log('relaunching the updated app (the "reopen Hermes" step)');
   const relaunch = await _electron.launch({
-    executablePath: launch.executablePath,
     args: launch.args,
     cwd: launch.cwd,
     env: launch.env,
