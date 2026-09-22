@@ -3,7 +3,12 @@ import fs from 'node:fs';
 import os from 'node:os';
 import path from 'node:path';
 import test from 'node:test';
-import { packagedResourcesPath, stagePackagedResources } from './launch-from-spec.mjs';
+import {
+  patchedPlaywrightElectronLoaderSource,
+  patchedPlaywrightElectronSource,
+  packagedResourcesPath,
+  stagePackagedResources,
+} from './launch-from-spec.mjs';
 
 test('resolves packaged resource locations for Linux and macOS bundles', () => {
   assert.equal(
@@ -13,6 +18,20 @@ test('resolves packaged resource locations for Linux and macOS bundles', () => {
   assert.equal(
     packagedResourcesPath('/tmp/Hermes.app/Contents/MacOS/Hermes', 'darwin'),
     '/tmp/Hermes.app/Contents/Resources',
+  );
+});
+
+test('applies the upstream Electron 40 Playwright launch ordering', () => {
+  const electronSource = 'let electronArguments = ["--inspect=0", "--remote-debugging-port=0", ...options.args || []];';
+  const loaderSource = 'process.argv.splice(1, process.argv.indexOf("--remote-debugging-port=0"));';
+
+  assert.equal(
+    patchedPlaywrightElectronSource(electronSource),
+    'let electronArguments = ["--inspect=0", ...options.args || []];',
+  );
+  assert.equal(
+    patchedPlaywrightElectronLoaderSource(loaderSource),
+    'process.argv.splice(1, process.argv.indexOf("--inspect=0"));\napp.commandLine.appendSwitch("remote-debugging-port", "0");',
   );
 });
 

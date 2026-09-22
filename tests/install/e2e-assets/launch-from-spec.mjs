@@ -80,6 +80,34 @@ export function resolveLaunch(spec) {
   throw new Error(`no electron binary found under ${candidates.join(' or ')}`);
 }
 
+/** @param {string} source */
+export function patchedPlaywrightElectronSource(source) {
+  const stock = 'let electronArguments = ["--inspect=0", "--remote-debugging-port=0", ...options.args || []];';
+  const patched = 'let electronArguments = ["--inspect=0", ...options.args || []];';
+  if ((source.split(stock).length - 1) !== 1) {
+    throw new Error('unsupported Playwright Electron driver: expected remote-debugging argv setup once');
+  }
+  return source.replace(stock, patched);
+}
+
+/** @param {string} source */
+export function patchedPlaywrightElectronLoaderSource(source) {
+  const stock = 'process.argv.splice(1, process.argv.indexOf("--remote-debugging-port=0"));';
+  const patched = 'process.argv.splice(1, process.argv.indexOf("--inspect=0"));\napp.commandLine.appendSwitch("remote-debugging-port", "0");';
+  if ((source.split(stock).length - 1) !== 1) {
+    throw new Error('unsupported Playwright Electron loader: expected remote-debugging argv splice once');
+  }
+  return source.replace(stock, patched);
+}
+
+/** @param {string} coreRoot */
+function patchPlaywrightElectronForElectron40(coreRoot) {
+  const electronDriver = path.join(coreRoot, 'lib', 'server', 'electron', 'electron.js');
+  const loader = path.join(coreRoot, 'lib', 'server', 'electron', 'loader.js');
+  fs.writeFileSync(electronDriver, patchedPlaywrightElectronSource(fs.readFileSync(electronDriver, 'utf8')));
+  fs.writeFileSync(loader, patchedPlaywrightElectronLoaderSource(fs.readFileSync(loader, 'utf8')));
+}
+
 /** @param {string} executablePath @param {NodeJS.Platform} [platform] */
 export function packagedResourcesPath(executablePath, platform = process.platform) {
   return platform === 'darwin'
@@ -117,7 +145,9 @@ function stagePackagedElectronRuntime(launch) {
   const sourceResources = packagedResourcesPath(launch.executablePath);
   const electronExecutable = require('electron');
   const targetResources = packagedResourcesPath(electronExecutable);
+  const coreRoot = path.dirname(require.resolve('playwright-core/package.json'));
   stagePackagedResources(sourceResources, targetResources);
+  patchPlaywrightElectronForElectron40(coreRoot);
 }
 
 /** @param {string} msg */
