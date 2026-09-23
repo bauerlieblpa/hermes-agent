@@ -239,6 +239,23 @@ class TestKillStaleDashboardProcesses:
         assert kill.call_args.args[0] == [12345]
         assert result["matched"] == [12345]
 
+    def test_mixed_version_update_preserves_scope_filter_with_legacy_finder(self, monkeypatch):
+        """A post-swap child can retain the pre-refactor facade; never drop its ownership guard."""
+        from hermes_cli import main_dashboard
+
+        calls = []
+
+        def legacy_finder(*, exclude_pids=None):
+            calls.append(exclude_pids)
+            return [12345]
+
+        monkeypatch.setattr(main_dashboard, "_find_stale_dashboard_pids", legacy_finder)
+        monkeypatch.setattr(dashboard_procs, "_pids_owned_by_hermes_home", lambda pids, home: [])
+        result = dashboard_procs._kill_stale_dashboard_processes(scope_home="/tmp/current-home")
+
+        assert calls == [None]
+        assert result == dashboard_procs._empty_result()
+
 
 class TestHermesHomeForPid:
     """Tri-state owner resolution: a readable environment always names a home."""
