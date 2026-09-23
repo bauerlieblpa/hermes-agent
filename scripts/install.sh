@@ -612,8 +612,22 @@ install_uv() {
     local _uv_install_log _uv_installer
     _uv_install_log="$(mktemp 2>/dev/null || echo "${TMPDIR:-$HERMES_HOME}/hermes-uv-install.$$.log")"
     _uv_installer="$(mktemp 2>/dev/null || echo "${TMPDIR:-$HERMES_HOME}/hermes-uv-installer.$$.sh")"
-    if ! curl -LsSf https://astral.sh/uv/install.sh -o "$_uv_installer" 2>"$_uv_install_log"; then
-        log_error "Failed to download uv installer from https://astral.sh/uv/install.sh"
+    # astral.sh is the primary source.  Its release installer is also
+    # published by uv on GitHub, which is a separate delivery path when a
+    # transient Cloudflare/proxy failure resets the primary download.
+    local _uv_installer_url _uv_downloaded=false
+    : > "$_uv_install_log"
+    for _uv_installer_url in \
+        https://astral.sh/uv/install.sh \
+        https://github.com/astral-sh/uv/releases/latest/download/uv-installer.sh; do
+        if curl -LsSf "$_uv_installer_url" -o "$_uv_installer" 2>>"$_uv_install_log"; then
+            _uv_downloaded=true
+            break
+        fi
+        log_warn "Could not download uv installer from $_uv_installer_url; trying next source..."
+    done
+    if [ "$_uv_downloaded" != true ]; then
+        log_error "Failed to download uv installer from astral.sh or GitHub releases"
         log_info "curl output:"
         sed 's/^/    /' "$_uv_install_log" >&2
         log_info "Install manually: https://docs.astral.sh/uv/getting-started/installation/"
