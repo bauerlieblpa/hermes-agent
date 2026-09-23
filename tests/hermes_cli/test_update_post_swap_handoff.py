@@ -31,12 +31,15 @@ def test_parent_reexecs_tail_on_pulled_tree_and_relays_exit_code(monkeypatch, tm
     with the child's code, leaving no open receipt for its own boundary to finalize."""
     import hermes_cli.update_cmd_config as cfg
     monkeypatch.setattr(update_handoff, "_running_from_windows_shim", lambda: False)
+    monkeypatch.setattr(update_handoff, "post_swap_project_root", lambda: tmp_path)
+    monkeypatch.setenv("PYTHONPATH", "/existing/path")
     monkeypatch.delenv(HANDOFF_PID_ENV, raising=False)
     monkeypatch.setattr(cfg, "_LAST_SIBLING_SNAPSHOTS", {"work": "snap-w"})
     spawned = {}
 
     def fake_popen(cmd, env=None, **kwargs):
         spawned["cmd"], spawned["env"] = cmd, env
+        spawned["cwd"] = kwargs.get("cwd")
         spawned["payload"] = json.loads(open(cmd[cmd.index("--post-swap") + 1], encoding="utf-8").read())
         return SimpleNamespace(wait=lambda timeout=None: 7)
 
@@ -59,6 +62,8 @@ def test_parent_reexecs_tail_on_pulled_tree_and_relays_exit_code(monkeypatch, tm
     assert spawned["cmd"][4:] == ["--yes", "--no-gateway-restart", "--branch", "main", "--post-swap", spawned["cmd"][-1]]
     env = spawned["env"]
     assert env[update_handoff.POST_SWAP_ENV] == "1" and env["HERMES_UPDATE_REEXEC"] == "1"
+    assert env["PYTHONPATH"] == f"{tmp_path}{os.pathsep}/existing/path"
+    assert spawned["cwd"] == tmp_path
     assert env[HANDOFF_PID_ENV] == str(os.getpid())
     payload = spawned["payload"]
     assert payload["receipt"]["steps"][0]["name"] == "pre_update_backup"

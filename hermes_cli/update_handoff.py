@@ -105,6 +105,16 @@ def post_swap_command(handoff_path: Path, argv_tail: list[str]) -> list[str]:
     return [str(post_swap_python()), "-m", "hermes_cli.main", "update", *argv_tail, "--post-swap", str(handoff_path)]
 
 
+def post_swap_project_root() -> Path:
+    """Return the checkout that the post-swap child must import from.
+
+    ``update_handoff`` remains resident from the pre-pull process, but its pathname is
+    inside the checkout Git has just replaced. Resolving that path after the swap gives
+    the pulled tree without relying on an editable-install path or the parent's cwd.
+    """
+    return Path(__file__).resolve().parent.parent
+
+
 def post_swap_child_env() -> dict[str, str]:
     """Environment for the child. ``HERMES_UPDATE_REEXEC`` marks it as already off the Windows
     shim (no second re-exec at the sync boundary; ``cmd_update`` hard-exits it when its receipt
@@ -114,6 +124,9 @@ def post_swap_child_env() -> dict[str, str]:
     from hermes_cli.update_lock import HANDOFF_PID_ENV
 
     env = {**os.environ, POST_SWAP_ENV: "1", _UPDATE_REEXEC_ENV: "1"}
+    root = str(post_swap_project_root())
+    inherited_pythonpath = env.get("PYTHONPATH")
+    env["PYTHONPATH"] = root if not inherited_pythonpath else f"{root}{os.pathsep}{inherited_pythonpath}"
     env.setdefault(HANDOFF_PID_ENV, str(os.getpid()))
     return env
 
@@ -217,7 +230,9 @@ def continue_update_in_fresh_interpreter(payload: dict[str, Any], *, argv_tail: 
         return 0
 
     try:
-        child = subprocess.Popen(cmd, env=env, stdin=sys.stdin)
+        child = subprocess.Popen(
+            cmd, env=env, cwd=post_swap_project_root(), stdin=sys.stdin,
+        )
     except OSError as exc:
         _print_manual_continuation(cmd, exc)
         return None
