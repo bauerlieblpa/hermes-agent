@@ -5,6 +5,7 @@ call time so imports stay one-way (both of those modules import this one lazily)
 """
 
 import contextlib
+import inspect
 import os
 import subprocess
 import sys
@@ -581,7 +582,17 @@ def _kill_stale_dashboard_processes(
         # An SSH-owned backend belongs to an attached Desktop client; killing it strands that
         # client's fixed SSH port-forward. Same ownership records as the reaper.
         exclude |= _lock_owned_serve_pids()
-    pids = _dash._find_stale_dashboard_pids(exclude_pids=exclude or None, scope_home=scope_home)
+    finder = _dash._find_stale_dashboard_pids
+    # An update can cross the September 18 refactor boundary with this new
+    # caller but the old facade still imported in the child. Keep the ownership
+    # filter in the caller for that one mixed-version hand-off; normal current
+    # trees retain the facade-owned filter.
+    if "scope_home" in inspect.signature(finder).parameters:
+        pids = finder(exclude_pids=exclude or None, scope_home=scope_home)
+    else:
+        pids = finder(exclude_pids=exclude or None)
+        if scope_home:
+            pids = _pids_owned_by_hermes_home(pids, scope_home)
     if not pids:
         return _empty_result()
     # Snapshot systemd unit/cgroup and argv BEFORE killing (the cgroup dies with the process).
