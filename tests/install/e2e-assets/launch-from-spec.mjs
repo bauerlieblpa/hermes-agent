@@ -32,7 +32,6 @@ import { createRequire } from 'node:module';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { parseArgs } from 'node:util';
-import { _electron } from '@playwright/test';
 import { prepareWindowForInput } from './window-input.cjs';
 
 const require = createRequire(import.meta.url);
@@ -125,6 +124,20 @@ function prepareElectron40Driver(launchPath, directory) {
   return wrapperPath;
 }
 
+/**
+ * Playwright loads its Electron driver when `@playwright/test` is imported.
+ * Prepare the scratch driver's Electron-40 compatibility patch first so the
+ * import observes it rather than the already-cached original module.
+ *
+ * @param {() => string} prepare
+ * @param {() => Promise<{_electron: unknown}>} importPlaywright
+ */
+export async function loadElectronAfterPreparation(prepare, importPlaywright) {
+  const wrapperPath = prepare();
+  const { _electron } = await importPlaywright();
+  return { wrapperPath, _electron };
+}
+
 /** @param {string} msg */
 function log(msg) {
   console.log(`[launch-from-spec] ${msg}`);
@@ -163,7 +176,10 @@ async function main() {
   /** @type {LaunchSpec} */
   const spec = JSON.parse(fs.readFileSync(values.spec, 'utf8'));
   const launch = resolveLaunch(spec);
-  const wrapperPath = prepareElectron40Driver(launch.executablePath, path.dirname(values.spec));
+  const { wrapperPath, _electron } = await loadElectronAfterPreparation(
+    () => prepareElectron40Driver(launch.executablePath, path.dirname(values.spec)),
+    () => import('@playwright/test'),
+  );
   log(`launching ${launch.executablePath} through the Electron 40-compatible Playwright driver (shape: ${spec.matchedShape})`);
 
   phase('launch');
