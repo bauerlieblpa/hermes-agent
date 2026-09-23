@@ -24,8 +24,10 @@
 # checkout has no tags and this exits non-zero rather than silently emitting an
 # empty matrix.
 #
-# Only vYYYY.M.D[.N] release tags are considered; the repo also carries
-# backup/* and one-off tags that are not releases.
+# Only vYYYY.M.D[.N] release tags that are ancestors of the checked-out HEAD
+# are considered. A fork can see a newer upstream release tag before its own
+# main has incorporated that release; selecting it would turn an "update FROM"
+# test into an unsupported downgrade.
 
 set -euo pipefail
 
@@ -69,12 +71,15 @@ fi
 mapfile -t tags < <(
   git -C "$REPO" tag --list 'v*' \
     | grep -E '^v[0-9]{4}\.[0-9]+\.[0-9]+(\.[0-9]+)?$' \
+    | while IFS= read -r tag; do
+        git -C "$REPO" merge-base --is-ancestor "$tag" HEAD && printf '%s\n' "$tag"
+      done \
     | sort -V
 )
 
 total="${#tags[@]}"
 if [ "$total" -eq 0 ]; then
-  echo "error: no release tags found in $REPO" >&2
+  echo "error: no release tags ancestral to HEAD found in $REPO" >&2
   echo '       A shallow clone has no tags: fetch with tags (actions/checkout' >&2
   echo '       with fetch-depth: 0, or fetch-tags: true).' >&2
   exit 1
