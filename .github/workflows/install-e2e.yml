@@ -62,6 +62,12 @@ on:
         required: false
         type: string
         default: ''
+      desktop-script-source:
+        description: 'For GUI installer legs: published exercises the live website script; checkout lets a feature-branch dispatch exercise its candidate script without changing scheduled production coverage.'
+        required: false
+        type: choice
+        default: published
+        options: [published, checkout]
   schedule:
     # Every 12 hours, off the hour to avoid the top-of-hour runner crunch.
     - cron: '20 7,19 * * *'
@@ -201,6 +207,7 @@ jobs:
       install-ref: ${{ matrix.install_ref }}
       tag-has-desktop: ${{ matrix.tag_has_desktop }}
       leg-id: ${{ matrix.leg_id }}
+      setup-script-source: ${{ github.event_name == 'workflow_dispatch' && inputs.desktop-script-source || 'published' }}
 
   macos:
     name: ${{ matrix.name }}
@@ -218,6 +225,7 @@ jobs:
       install-ref: ${{ matrix.install_ref }}
       tag-has-desktop: ${{ matrix.tag_has_desktop }}
       leg-id: ${{ matrix.leg_id }}
+      setup-script-source: ${{ github.event_name == 'workflow_dispatch' && inputs.desktop-script-source || 'published' }}
 
   # The leg player: one static HTML for the whole run. Uploaded BEFORE the
   # matrix legs so it exists even when every leg dies; the report job links

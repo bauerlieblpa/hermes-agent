@@ -43,6 +43,7 @@ PHASE="all"
 UPDATE_METHOD=""
 INSTALL_REF=""
 DMG_URL="https://hermes-assets.nousresearch.com/Hermes-Setup.dmg"
+SETUP_SCRIPT_SOURCE="published"
 PLAYWRIGHT_VERSION="1.58.2"
 while [ "$#" -gt 0 ]; do
   case "$1" in
@@ -58,6 +59,9 @@ while [ "$#" -gt 0 ]; do
     --dmg-url)
       [ "$#" -ge 2 ] || { echo 'error: --dmg-url needs a value' >&2; exit 1; }
       DMG_URL="$2"; shift 2 ;;
+    --setup-script-source)
+      [ "$#" -ge 2 ] || { echo 'error: --setup-script-source needs a value' >&2; exit 1; }
+      SETUP_SCRIPT_SOURCE="$2"; shift 2 ;;
     -h|--help) sed -n '2,32p' "$0"; exit 0 ;;
     *) echo "error: unknown argument: $1" >&2; exit 1 ;;
   esac
@@ -65,6 +69,10 @@ done
 case "$UPDATE_METHOD" in
   open-app-update|hermes-desktop-app-update|hermes-update|installer-script|installer-script+desktop) ;;
   *) echo "error: unsupported --update-method '$UPDATE_METHOD'" >&2; exit 1 ;;
+esac
+case "$SETUP_SCRIPT_SOURCE" in
+  published|checkout) ;;
+  *) echo "error: unsupported --setup-script-source '$SETUP_SCRIPT_SOURCE'" >&2; exit 1 ;;
 esac
 [ "$(uname -s)" = "Darwin" ] || { echo "error: this driver runs on macOS only" >&2; exit 1; }
 
@@ -208,6 +216,12 @@ phase_install() {
   # shellcheck disable=SC1090
   . "$STATE"
   arm_redirect
+  if [ "$SETUP_SCRIPT_SOURCE" = checkout ]; then
+    export HERMES_SETUP_DEV_REPO_ROOT="$REPO_ROOT"
+    ok "using checkout install script for branch validation"
+  else
+    unset HERMES_SETUP_DEV_REPO_ROOT
+  fi
   step "installing OLD ($OLD_REF) via the published Hermes-Setup.dmg"
 
   local dmg="$WORK_ROOT/Hermes-Setup.dmg"

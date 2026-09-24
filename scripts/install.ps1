@@ -4219,8 +4219,15 @@ function Install-Desktop {
             $code = $LASTEXITCODE
         }
         if ($code -eq 0) {
-            & node apps/desktop/scripts/ensure-rolldown-binding.mjs
-            $code = $LASTEXITCODE
+            if (Test-Path (Join-Path $InstallDir "apps/desktop/scripts/ensure-rolldown-binding.mjs")) {
+                & node (Join-Path $InstallDir "apps/desktop/scripts/ensure-rolldown-binding.mjs")
+                $code = $LASTEXITCODE
+            } else {
+                # A current bootstrap script can deliberately initialize an older
+                # release before exercising its update path; that tree predates
+                # this optional repair helper.
+                Write-Info "Skipping Rolldown binding repair; this checkout predates the helper."
+            }
         }
         $ErrorActionPreference = $prevEAP
         if ($code -ne 0) {

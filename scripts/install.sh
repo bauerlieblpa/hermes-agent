@@ -3515,6 +3515,19 @@ install_desktop_voice_deps() {
     return 0
 }
 
+_install_desktop_workspace_deps() {
+    local npm_mode="$1"
+    (
+        cd "$INSTALL_DIR" || return 1
+        npm "$npm_mode" --include=optional || return $?
+        if [ -f apps/desktop/scripts/ensure-rolldown-binding.mjs ]; then
+            node apps/desktop/scripts/ensure-rolldown-binding.mjs
+        else
+            log_info "Skipping Rolldown binding repair; this checkout predates the helper."
+        fi
+    )
+}
+
 install_desktop() {
     local desktop_dir="$INSTALL_DIR/apps/desktop"
 
@@ -3566,11 +3579,11 @@ install_desktop() {
     log_info "Installing desktop workspace dependencies (includes Electron ~150MB, 1-3min)..."
     local _deps_start _deps_remaining
     _deps_start=$(date +%s)
-    if run_with_timeout "$DESKTOP_BUILD_TIMEOUT" bash -c 'cd "$1" && npm ci --include=optional && node apps/desktop/scripts/ensure-rolldown-binding.mjs' _ "$INSTALL_DIR"; then
+    if run_with_timeout "$DESKTOP_BUILD_TIMEOUT" _install_desktop_workspace_deps ci; then
         log_success "Desktop workspace dependencies installed"
     elif _deps_remaining=$(( DESKTOP_BUILD_TIMEOUT - ($(date +%s) - _deps_start) )); \
          [ "$_deps_remaining" -lt 30 ] && _deps_remaining=30; \
-         run_with_timeout "$_deps_remaining" bash -c 'cd "$1" && npm install --include=optional && node apps/desktop/scripts/ensure-rolldown-binding.mjs' _ "$INSTALL_DIR"; then
+         run_with_timeout "$_deps_remaining" _install_desktop_workspace_deps install; then
         log_success "Desktop workspace dependencies installed"
     elif _electron_pkg_staged_missing_dist "$INSTALL_DIR"; then
         log_warn "Desktop dependency install failed with a missing Electron dist; attempting self-heal..."

@@ -47,6 +47,11 @@ on:
         required: false
         type: string
         default: https://hermes-assets.nousresearch.com/Hermes-Setup.dmg
+      setup-script-source:
+        description: 'published uses the live installer script; checkout is a manual feature-branch validation mode for the checked-out candidate script.'
+        required: false
+        type: string
+        default: published
       timeout-minutes:
         description: 'Job timeout. App-update legs do a full Electron build.'
         required: false
@@ -110,7 +115,8 @@ jobs:
           tests/install/macos-desktop-e2e.sh --phase stage \
             --update-method '${{ inputs.update-method }}' \
             --install-ref '${{ inputs.install-ref }}' \
-            --dmg-url '${{ inputs.dmg-url }}'
+            --dmg-url '${{ inputs.dmg-url }}' \
+            --setup-script-source '${{ inputs.setup-script-source }}'
         env:
           HERMES_E2E_LOG_DIR: ${{ runner.temp }}/e2e-logs
 
@@ -120,7 +126,8 @@ jobs:
           tests/install/macos-desktop-e2e.sh --phase install \
             --update-method '${{ inputs.update-method }}' \
             --install-ref '${{ inputs.install-ref }}' \
-            --dmg-url '${{ inputs.dmg-url }}'
+            --dmg-url '${{ inputs.dmg-url }}' \
+            --setup-script-source '${{ inputs.setup-script-source }}'
         env:
           HERMES_E2E_LOG_DIR: ${{ runner.temp }}/e2e-logs
 
@@ -130,7 +137,8 @@ jobs:
           tests/install/macos-desktop-e2e.sh --phase update \
             --update-method '${{ inputs.update-method }}' \
             --install-ref '${{ inputs.install-ref }}' \
-            --dmg-url '${{ inputs.dmg-url }}'
+            --dmg-url '${{ inputs.dmg-url }}' \
+            --setup-script-source '${{ inputs.setup-script-source }}'
         env:
           HERMES_E2E_LOG_DIR: ${{ runner.temp }}/e2e-logs
 

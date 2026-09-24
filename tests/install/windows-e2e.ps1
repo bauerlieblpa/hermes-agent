@@ -106,6 +106,9 @@ param(
 
     [string]$SetupExeUrl = "https://hermes-assets.nousresearch.com/Hermes-Setup.exe",
 
+    [ValidateSet("published", "checkout")]
+    [string]$SetupScriptSource = "published",
+
     # Pinned @playwright/test for the update-gui driver. Installed fresh
     # into a scratch dir every run -- never resolved from the installed
     # tree -- so the driver behaves identically for every OLD ref. Bump
@@ -631,9 +634,14 @@ function Invoke-PhaseInstallGui {
     Copy-Item -Path (Join-Path $AssetsDir "install-and-launch.ahk"), (Join-Path $AssetsDir "install-button.png"), (Join-Path $AssetsDir "launch-button.png") -Destination $AhkDir -Force
 
     $env:HERMES_HOME = $HermesHome
-    # As shipped: NO dev-root override, no pin override. Ensure a stray
-    # local dev checkout can't hijack resolution.
-    Remove-Item Env:HERMES_SETUP_DEV_REPO_ROOT -ErrorAction SilentlyContinue
+    if ($SetupScriptSource -eq "checkout") {
+        $env:HERMES_SETUP_DEV_REPO_ROOT = $RepoRoot
+        Write-Host "  using checkout install script for branch validation: $RepoRoot"
+    } else {
+        # As shipped: no dev-root override or pin override. Ensure a stray
+        # local checkout cannot hijack production-mode resolution.
+        Remove-Item Env:HERMES_SETUP_DEV_REPO_ROOT -ErrorAction SilentlyContinue
+    }
     New-Item -ItemType Directory -Path $HermesHome -Force | Out-Null
 
     $recorder = Start-DesktopRecorder (Join-Path $proof "desktop-frames")
