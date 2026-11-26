@@ -9,6 +9,7 @@ import inspect
 import os
 import subprocess
 import sys
+from collections.abc import Callable
 from pathlib import Path
 
 from hermes_cli._startup_fast import is_desktop_ssh_backend_argv
@@ -624,6 +625,17 @@ def _kill_pids_posix(pids: list[int], killed: list[int], failed: list[tuple[int,
                   for pid in survivors)
 
 
+def _find_stale_dashboard_pids_compat(
+    finder: Callable[..., list[int]], *, exclude_pids: set[int] | None,
+    scope_home: str | None,
+) -> list[int]:
+    """Preserve ownership filtering across a mixed-version update handoff."""
+    if "scope_home" in inspect.signature(finder).parameters:
+        return finder(exclude_pids=exclude_pids, scope_home=scope_home)
+    pids = finder(exclude_pids=exclude_pids)
+    return _pids_owned_by_hermes_home(pids, scope_home) if scope_home else pids
+
+
 def _kill_stale_dashboard_processes(
     reason: str = "the running backend no longer matches the updated frontend", *,
     restart_managed: bool = False, already_restarted_units: set[str] | None = None,
@@ -664,17 +676,12 @@ def _kill_stale_dashboard_processes(
         # An SSH-owned backend belongs to an attached Desktop client; killing it strands that
         # client's fixed SSH port-forward. Same ownership records as the reaper.
         exclude |= _lock_owned_serve_pids()
-    finder = _dash._find_stale_dashboard_pids
     # An update can cross the September 18 refactor boundary with this new
     # caller but the old facade still imported in the child. Keep the ownership
     # filter in the caller for that one mixed-version hand-off; normal current
     # trees retain the facade-owned filter.
-    if "scope_home" in inspect.signature(finder).parameters:
-        pids = finder(exclude_pids=exclude or None, scope_home=scope_home)
-    else:
-        pids = finder(exclude_pids=exclude or None)
-        if scope_home:
-            pids = _pids_owned_by_hermes_home(pids, scope_home)
+    pids = _find_stale_dashboard_pids_compat(
+        _dash._find_stale_dashboard_pids, exclude_pids=exclude or None, scope_home=scope_home)
     if not pids:
         return _empty_result()
     # Snapshot systemd unit/cgroup and argv BEFORE killing (the cgroup dies with the process).

@@ -88,7 +88,7 @@ def test_picker_fails_when_no_release_is_ancestral(tmp_path):
     _git(checkout, "config", "user.email", "fixture@example.invalid")
     _git(checkout, "commit", "--allow-empty", "-m", "unrelated history")
     _git(checkout, "remote", "add", "origin", str(origin))
-    result = subprocess.run(["bash", str(SCRIPT), "--repo", str(checkout)], capture_output=True, text=True)
+    result = subprocess.run(["bash", str(SCRIPT), "--repo", str(checkout)], check=False, capture_output=True, text=True)
     assert result.returncode != 0
     assert "no release tags ancestral to HEAD" in result.stderr
     assert _git(checkout, "tag", "--list").stdout == ""
@@ -98,7 +98,7 @@ def test_picker_rejects_shallow_history(tmp_path):
     origin = _origin_with_tags(tmp_path, ["v2026.4.3", "v2026.4.13"])
     checkout = tmp_path / "shallow"
     _git(tmp_path, "clone", "--no-local", "--no-tags", "--depth", "1", str(origin), str(checkout))
-    result = subprocess.run(["bash", str(SCRIPT), "--repo", str(checkout)], capture_output=True, text=True)
+    result = subprocess.run(["bash", str(SCRIPT), "--repo", str(checkout)], check=False, capture_output=True, text=True)
     assert result.returncode != 0
     assert "shallow history" in result.stderr
     assert _git(checkout, "tag", "--list").stdout == ""
@@ -110,7 +110,7 @@ def test_picker_refuses_divergent_local_selected_tag(tmp_path):
     _git(tmp_path, "clone", "--no-local", "--no-tags", str(origin), str(checkout))
     _git(checkout, "tag", "v2026.4.13", "HEAD~1")
     before = _git(checkout, "rev-parse", "refs/tags/v2026.4.13").stdout
-    result = subprocess.run(["bash", str(SCRIPT), "--count", "1", "--repo", str(checkout)], capture_output=True, text=True)
+    result = subprocess.run(["bash", str(SCRIPT), "--count", "1", "--repo", str(checkout)], check=False, capture_output=True, text=True)
     assert result.returncode != 0
     assert "local tag differs" in result.stderr
     assert _git(checkout, "rev-parse", "refs/tags/v2026.4.13").stdout == before
